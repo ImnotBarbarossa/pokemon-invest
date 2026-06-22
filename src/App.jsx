@@ -405,40 +405,57 @@ async function resolveDeckImg(nom) {
 }
 
 function DeckCardImg({ nom, fallback, couleur = "#1a2332", style }) {
-  const [url, setUrl] = useState(() => deckImgCache.get(nom) ?? fallback ?? null);
-  const [failed, setFailed] = useState(false);
+  // Source résolue par l'API (priorité), et échecs distincts pour
+  // l'image résolue et le fallback hardcodé — évite la race condition
+  // où un fallback en 404 masquait l'image résolue arrivée juste après.
+  const [resolved, setResolved] = useState(() => deckImgCache.get(nom) || null);
+  const [resFailed, setResFailed] = useState(false);
+  const [fbFailed,  setFbFailed]  = useState(false);
+  const [pending,   setPending]   = useState(() => !deckImgCache.has(nom));
 
   useEffect(() => {
     let alive = true;
-    setFailed(false);
-    // Si déjà résolu en cache (y compris null), on l'utilise directement
+    setResFailed(false); setFbFailed(false);
     if (deckImgCache.has(nom)) {
-      const cached = deckImgCache.get(nom);
-      setUrl(cached || fallback || null);
-      if (!cached && !fallback) setFailed(true);
+      setResolved(deckImgCache.get(nom) || null);
+      setPending(false);
       return;
     }
-    setUrl(fallback || null); // affiche le fallback hardcodé en attendant
+    setResolved(null); setPending(true);
     resolveDeckImg(nom).then(u => {
       if (!alive) return;
-      if (u) setUrl(u);
-      else if (!fallback) setFailed(true);
+      setPending(false);
+      if (u) setResolved(u);
     });
     return () => { alive = false; };
-  }, [nom, fallback]);
+  }, [nom]);
 
-  if (failed || !url) {
-    // Fallback typé : tuile colorée avec initiale, plutôt qu'un 🃏 générique
+  const useResolved = resolved && !resFailed;
+  const useFallback = !useResolved && fallback && !fbFailed;
+  const src = useResolved ? resolved : useFallback ? fallback : null;
+
+  if (!src) {
+    // En cours de résolution (sans fallback affichable) → shimmer neutre
+    if (pending) {
+      return (
+        <div style={{ ...style, background:"#0f1622", borderRadius:6, aspectRatio:"63/88",
+          animation:"pulse 1.2s ease-in-out infinite" }}/>
+      );
+    }
+    // Irrésolvable → tuile colorée typée (couleur du deck + initiale)
     return (
       <div style={{ ...style, display:"flex", alignItems:"center", justifyContent:"center",
         background:`linear-gradient(135deg, ${couleur}22, ${couleur}08)`, border:`1px solid ${couleur}33`,
-        borderRadius:6, aspectRatio:"63/88", color:`${couleur}`, fontSize:18, fontWeight:800 }}>
+        borderRadius:6, aspectRatio:"63/88", color:couleur, fontSize:18, fontWeight:800 }}>
         {(nom || "?").charAt(0).toUpperCase()}
       </div>
     );
   }
 
-  return <img src={url} alt={nom || ""} onError={() => { if (fallback && url !== fallback) setUrl(fallback); else setFailed(true); }} style={style} />;
+  return (
+    <img key={src} src={src} alt={nom || ""} style={style}
+      onError={() => { if (useResolved) setResFailed(true); else if (useFallback) setFbFailed(true); }}/>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════
