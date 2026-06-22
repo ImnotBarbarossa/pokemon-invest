@@ -295,7 +295,21 @@ const DECKS = [
 //  HELPERS
 // ═══════════════════════════════════════════════════════════════════
 const eur  = n => new Intl.NumberFormat("fr-FR", { style:"currency", currency:"EUR", minimumFractionDigits:2 }).format(n);
-const rend = (a, c) => (((c - a) / a) * 100).toFixed(1);
+const rend = (a, c) => a > 0 ? (((c - a) / a) * 100).toFixed(1) : "0.0";
+
+// ═══════════════════════════════════════════════════════════════════
+//  PERSISTANCE LOCALSTORAGE
+// ═══════════════════════════════════════════════════════════════════
+const LS_COL = "pokeinvest_col_v2";
+const LS_WL  = "pokeinvest_wl_v2";
+
+function lsGet(key, fallback) {
+  try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; }
+  catch { return fallback; }
+}
+function lsSave(key, data) {
+  try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  COMPOSANT IMAGE — double fallback automatique
@@ -413,7 +427,7 @@ function TierBadge({ tier }) {
 // ═══════════════════════════════════════════════════════════════════
 //  MODALS
 // ═══════════════════════════════════════════════════════════════════
-function ModalCarte({ carte, prixData, onFermer }) {
+function ModalCarte({ carte, prixData, onFermer, onSupprimer }) {
   const p   = prixData?.[carte.tcgId];
   const px  = p?.trend ?? carte.prixAchat;
   const gain = (px - carte.prixAchat) * carte.quantite;
@@ -456,7 +470,15 @@ function ModalCarte({ carte, prixData, onFermer }) {
             <div key={l} style={{ background:"#0d1117",borderRadius:8,padding:"10px 12px" }}><div style={{ fontSize:9,color:"#475569",marginBottom:3 }}>{l}</div><div style={{ fontSize:14,fontWeight:700,color:c }}>{v}</div></div>
           ))}
         </div>
-        <button onClick={onFermer} style={{ width:"100%",background:"#1e2a3a",border:"1px solid #2a3346",color:"#94a3b8",padding:10,borderRadius:8,cursor:"pointer",fontSize:12 }}>Fermer</button>
+        <div style={{ display:"flex",gap:8 }}>
+          {onSupprimer && (
+            <button onClick={() => { if (window.confirm(`Supprimer "${carte.nom}" de la collection ?`)) { onSupprimer(carte.id); onFermer(); } }}
+              style={{ flex:1,background:"#ef444415",border:"1px solid #ef444430",color:"#ef4444",padding:10,borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700 }}>
+              🗑️ Supprimer
+            </button>
+          )}
+          <button onClick={onFermer} style={{ flex:2,background:"#1e2a3a",border:"1px solid #2a3346",color:"#94a3b8",padding:10,borderRadius:8,cursor:"pointer",fontSize:12 }}>Fermer</button>
+        </div>
       </div>
     </div>
   );
@@ -508,24 +530,27 @@ function ModalAjout({ onFermer, onAjouter }) {
   const [res,    setRes]    = useState([]);
   const [loadS,  setLoadS]  = useState(false);
   const [errApi, setErrApi] = useState(null);
-  const [form,   setForm]   = useState({ grade:"RAW", prixAchat:"", quantite:"1", etat:"Quasi Parfaite" });
+  const [form,   setForm]   = useState({ grade:"RAW", prixAchat:"", quantite:"1", etat:"Quasi Parfaite", foil:false });
+  const debounceRef = useRef(null);
 
-  const chercher = async t => {
+  const chercher = t => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!t || t.length < 2) { setRes([]); setErrApi(null); return; }
-    setLoadS(true); setErrApi(null);
-    try {
-      // Bug fix: bon endpoint TCGdex pour la recherche
-      const r = await fetch(`${TCGDEX}/cards?name=${encodeURIComponent(t)}&pagination:page=1&pagination:itemsPerPage=12`);
-      if (r.ok) {
-        const d = await r.json();
-        setRes(Array.isArray(d) ? d : []);
-      } else {
-        setErrApi(`Erreur API : ${r.status}`);
+    debounceRef.current = setTimeout(async () => {
+      setLoadS(true); setErrApi(null);
+      try {
+        const r = await fetch(`${TCGDEX}/cards?name=${encodeURIComponent(t)}&pagination:page=1&pagination:itemsPerPage=12`);
+        if (r.ok) {
+          const d = await r.json();
+          setRes(Array.isArray(d) ? d : []);
+        } else {
+          setErrApi(`Erreur API : ${r.status}`);
+        }
+      } catch {
+        setErrApi("Impossible de joindre TCGdex. Vérifiez votre connexion.");
       }
-    } catch (e) {
-      setErrApi("Impossible de joindre TCGdex. Vérifiez votre connexion.");
-    }
-    setLoadS(false);
+      setLoadS(false);
+    }, 350);
   };
 
   const valider = () => {
@@ -540,7 +565,7 @@ function ModalAjout({ onFermer, onAjouter }) {
       etat:      form.etat,
       prixAchat: +form.prixAchat,
       quantite:  +form.quantite || 1,
-      foil:      true,
+      foil:      form.foil,
       rarete:    sel.rarity || "Rare",
       // Bug fix: utilisation correcte du champ image TCGdex
       img: sel.image ? `${sel.image}/high.webp` : null,
@@ -589,17 +614,22 @@ function ModalAjout({ onFermer, onAjouter }) {
           </div>
         )}
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14 }}>
-          <div><label style={lbl}>PRIX D'ACHAT (€) *</label><input style={inp} type="number" placeholder="0,00" value={form.prixAchat} onChange={e=>setForm(f=>({...f,prixAchat:e.target.value}))}/></div>
+          <div><label style={lbl}>PRIX D'ACHAT (€) *</label><input style={inp} type="number" step="0.01" min="0" placeholder="0,00" value={form.prixAchat} onChange={e=>setForm(f=>({...f,prixAchat:e.target.value}))}/></div>
           <div><label style={lbl}>QUANTITÉ</label><input style={inp} type="number" min="1" value={form.quantite} onChange={e=>setForm(f=>({...f,quantite:e.target.value}))}/></div>
           <div><label style={lbl}>GRADE</label>
             <select style={inp} value={form.grade} onChange={e=>setForm(f=>({...f,grade:e.target.value}))}>
-              {["RAW","PSA 10","PSA 9","PSA 8","PSA 7","PSA 6","CGC 10","CGC 9.5","BGS 10"].map(g=><option key={g}>{g}</option>)}
+              {["RAW","PSA 10","PSA 9","PSA 8","PSA 7","PSA 6","CGC 10","CGC 9.5","BGS 10"].map(g=><option key={g} value={g}>{g}</option>)}
             </select>
           </div>
           <div><label style={lbl}>ÉTAT</label>
             <select style={inp} value={form.etat} onChange={e=>setForm(f=>({...f,etat:e.target.value}))}>
-              {["Quasi Parfaite","Légèrement Jouée","Moyennement Jouée","Très Jouée","Pauvre"].map(e=><option key={e}>{e}</option>)}
+              {["Quasi Parfaite","Légèrement Jouée","Moyennement Jouée","Très Jouée","Pauvre"].map(e=><option key={e} value={e}>{e}</option>)}
             </select>
+          </div>
+          <div style={{ display:"flex",alignItems:"center",gap:8,gridColumn:"1/-1" }}>
+            <input type="checkbox" id="foil_check" checked={form.foil} onChange={e=>setForm(f=>({...f,foil:e.target.checked}))}
+              style={{ width:16,height:16,accentColor:"#00e5a0",cursor:"pointer" }}/>
+            <label htmlFor="foil_check" style={{ ...lbl,margin:0,cursor:"pointer",color:"#94a3b8",fontSize:11 }}>Carte Holo / Foil</label>
           </div>
         </div>
         <div style={{ display:"flex",gap:8 }}>
@@ -859,8 +889,8 @@ function VueBD() {
 // ═══════════════════════════════════════════════════════════════════
 export default function App() {
   const [onglet,  setOnglet]  = useState("tableau");
-  const [col,     setCol]     = useState(COL_INIT);
-  const [wl]                  = useState(WL_INIT);
+  const [col,     setCol]     = useState(() => lsGet(LS_COL, COL_INIT));
+  const [wl,      setWl]      = useState(() => lsGet(LS_WL,  WL_INIT));
   const [carte,   setCarte]   = useState(null);
   const [deckSel, setDeckSel] = useState(null);
   const [ajout,   setAjout]   = useState(false);
@@ -868,6 +898,9 @@ export default function App() {
   const [tri,     setTri]     = useState("rendement");
   const [fg,      setFg]      = useState("tous");
   const [tierFil, setTierFil] = useState("tous");
+
+  useEffect(() => lsSave(LS_COL, col), [col]);
+  useEffect(() => lsSave(LS_WL,  wl),  [wl]);
 
   const ids = [...col.map(c => c.tcgId), ...wl.map(w => w.tcgId)].filter(Boolean);
   const { prix, load, maj, actualiser } = usePrix(ids);
@@ -989,14 +1022,21 @@ export default function App() {
               const ec = (((p - w.prixCible) / w.prixCible) * 100).toFixed(1);
               return (
                 <div key={w.id} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9,paddingBottom:9,borderBottom:"1px solid #1a2332" }}>
-                  <div><div style={{ fontSize:10,color:"#e2e8f0",fontWeight:600,lineHeight:1.3 }}>{w.nom}</div><div style={{ fontSize:9,color:"#3d5068" }}>Cible: {eur(w.prixCible)}</div></div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:10,color:"#e2e8f0",fontWeight:600,lineHeight:1.3 }}>{w.nom}</div>
+                    <div style={{ fontSize:9,color:"#3d5068" }}>Cible: {eur(w.prixCible)}</div>
+                  </div>
                   <div style={{ textAlign:"right" }}>
                     <div style={{ fontSize:11,fontWeight:700,color:"#e2e8f0" }}>{eur(p)}</div>
                     {sig ? <span style={S.bdg("#00e5a0")}>🎯 ACHAT</span> : <span style={{ fontSize:9,color:+ec>0?"#ef4444":"#00e5a0",fontWeight:700 }}>{+ec>0?"+":""}{ec}%</span>}
                   </div>
+                  <button onClick={() => setWl(l => l.filter(x => x.id !== w.id))}
+                    style={{ background:"none",border:"none",color:"#3d5068",cursor:"pointer",fontSize:13,marginLeft:6,padding:"0 2px",lineHeight:1 }}
+                    title="Retirer de la watchlist">×</button>
                 </div>
               );
             })}
+            {wl.length === 0 && <div style={{ fontSize:10,color:"#3d5068",textAlign:"center",padding:"10px 0" }}>Watchlist vide</div>}
             <button onClick={() => setOnglet("decks")} style={{ ...S.btn("s"),width:"100%",marginTop:4,fontSize:9 }}>Voir les decks Pocket →</button>
           </div>
         </div>
@@ -1032,6 +1072,18 @@ export default function App() {
         </div>
         <div style={{ display:"flex",gap:8,alignItems:"center" }}>
           <SrcBadge src="CardMarket FR" load={load}/>
+          <button onClick={() => {
+            const rows = [["Nom","Extension","Numéro","Grade","État","Foil","Prix Achat","Prix Actuel","P&L","Rendement %","Quantité","Valeur Totale","Date Ajout"]];
+            col.forEach(c => {
+              const p = gp(c), g = (p - c.prixAchat) * c.quantite, rv = rend(c.prixAchat, p);
+              rows.push([c.nom,c.extension,c.numero,c.grade,c.etat,c.foil?"Oui":"Non",c.prixAchat.toFixed(2),p.toFixed(2),g.toFixed(2),rv,c.quantite,(p*c.quantite).toFixed(2),c.dateAjout]);
+            });
+            const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(";")).join("\n");
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8" }));
+            a.download = `pokeinvest_${new Date().toISOString().split("T")[0]}.csv`;
+            a.click();
+          }} style={{ ...S.btn("s"),fontSize:10 }}>📥 Export CSV</button>
           <button onClick={() => setAjout(true)} style={S.btn("p")}>+ Ajouter</button>
         </div>
       </div>
@@ -1039,7 +1091,7 @@ export default function App() {
         <input style={{ ...S.inp,flex:1,minWidth:160 }} placeholder="🔍 Rechercher…" value={rech} onChange={e=>setRech(e.target.value)}/>
         <select style={S.inp} value={fg} onChange={e=>setFg(e.target.value)}>
           <option value="tous">Tous grades</option>
-          {["PSA 10","PSA 9","PSA 8","PSA 7","RAW"].map(g => <option key={g}>{g}</option>)}
+          {["PSA 10","PSA 9","PSA 8","PSA 7","RAW"].map(g => <option key={g} value={g}>{g}</option>)}
         </select>
         <select style={S.inp} value={tri} onChange={e=>setTri(e.target.value)}>
           <option value="rendement">↓ Rendement</option>
@@ -1237,7 +1289,7 @@ export default function App() {
           {onglet==="analytics"  && <Analytics/>}
         </div>
       </div>
-      {carte    && <ModalCarte carte={carte}   prixData={prix} onFermer={() => setCarte(null)}/>}
+      {carte    && <ModalCarte carte={carte}   prixData={prix} onFermer={() => setCarte(null)} onSupprimer={id => setCol(p => p.filter(c => c.id !== id))}/>}
       {deckSel  && <ModalDeck  deck={deckSel}              onFermer={() => setDeckSel(null)}/>}
       {ajout    && <ModalAjout                             onFermer={() => setAjout(false)} onAjouter={c => setCol(p => [...p,c])}/>}
     </div>
