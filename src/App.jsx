@@ -709,6 +709,7 @@ function VueBD() {
   const [totalBD,    setTotalBD]     = useState(0);
   const [loadingSet, setLoadingSet]  = useState(false);
   const [filtre,     setFiltre]      = useState("");
+  const [filtreSet,  setFiltreSet]   = useState("");
   const [syncedSets, setSyncedSets]  = useState({});
   const [vue,        setVue]         = useState("sets");
   const [errSets,    setErrSets]     = useState(null);
@@ -789,8 +790,12 @@ function VueBD() {
 
   const S = { card:{ background:"#0b0f18",border:"1px solid #1a2332",borderRadius:12 } };
 
-  // Grouper sets par série
-  const parSerie = sets.reduce((acc, s) => {
+  // Grouper sets par série (avec filtre)
+  const setsFiltres = filtreSet
+    ? sets.filter(s => s.name?.toLowerCase().includes(filtreSet.toLowerCase()) || s.serie?.name?.toLowerCase().includes(filtreSet.toLowerCase()))
+    : sets;
+
+  const parSerie = setsFiltres.reduce((acc, s) => {
     const k = s.serie?.name || "Autres";
     if (!acc[k]) acc[k] = [];
     acc[k].push(s);
@@ -819,6 +824,9 @@ function VueBD() {
       {errSets && <div style={{ background:"#ef444415",border:"1px solid #ef444430",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:11,color:"#ef4444" }}>⚠ {errSets}</div>}
 
       {vue === "sets" && (
+        <div>
+        <input style={{ width:"100%",background:"#0b0f18",border:"1px solid #1a2332",borderRadius:8,padding:"8px 14px",color:"#e2e8f0",fontSize:11,outline:"none",marginBottom:14 }}
+          placeholder="🔍 Filtrer les extensions…" value={filtreSet} onChange={e => setFiltreSet(e.target.value)}/>
         <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12 }}>
           {Object.entries(parSerie).map(([serie, exts]) => (
             <div key={serie} style={{ gridColumn:"1/-1" }}>
@@ -850,6 +858,10 @@ function VueBD() {
               </div>
             </div>
           ))}
+        </div>
+        {Object.keys(parSerie).length === 0 && filtreSet && (
+          <div style={{ textAlign:"center",padding:40,color:"#475569",fontSize:12 }}>Aucune extension ne correspond à "{filtreSet}"</div>
+        )}
         </div>
       )}
 
@@ -1062,19 +1074,21 @@ export default function App() {
           </div>
           <div style={{ ...S.card,padding:18 }}>
             <div style={{ fontSize:9,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em",marginBottom:12 }}>MEILLEURE PERFORMANCE</div>
-            {best && (() => {
-              const p = gp(best), rv = rend(best.prixAchat, p);
+            {best ? (() => {
+              const p = gp(best), gain_b = p - best.prixAchat, rv = rend(best.prixAchat, p), pos = gain_b >= 0;
               return (
                 <div>
-                  <div style={{ display:"flex",gap:10,marginBottom:10 }}>
+                  <div onClick={() => setCarte(best)} style={{ display:"flex",gap:10,marginBottom:10,cursor:"pointer" }}
+                    onMouseEnter={e => e.currentTarget.style.opacity="0.8"}
+                    onMouseLeave={e => e.currentTarget.style.opacity="1"}>
                     <CardImg src={best.img} fallback={ioImg(best.tcgId)} alt="" style={{ width:44,borderRadius:5 }}/>
                     <div>
                       <div style={{ fontSize:10,fontWeight:700,color:"#e2e8f0",lineHeight:1.3 }}>{best.nom}</div>
                       <div style={{ fontSize:9,color:"#3d5068",marginTop:1 }}>{best.extension}</div>
-                      <div style={{ marginTop:4 }}><span style={S.bdg(best.grade==="PSA 10"?"#00e5a0":best.grade.startsWith("PSA")?"#f59e0b":"#64748b")}>{best.grade}</span></div>
+                      <div style={{ marginTop:4 }}><span style={S.bdg(best.grade==="PSA 10"||best.grade==="CGC 10"?"#00e5a0":best.grade.startsWith("PSA")||best.grade.startsWith("CGC")?"#f59e0b":"#64748b")}>{best.grade}</span></div>
                     </div>
                   </div>
-                  {[["Achat",eur(best.prixAchat),"#64748b"],["Actuel",eur(p),"#e2e8f0"],["P&L",`+${eur(p-best.prixAchat)}`,"#00e5a0"],["Rend.",`+${rv}%`,"#00e5a0"]].map(([l,v,c],i) => (
+                  {[["Achat",eur(best.prixAchat),"#64748b"],["Actuel",eur(p),"#e2e8f0"],["P&L",`${pos?"+":""}${eur(gain_b)}`,pos?"#00e5a0":"#ef4444"],["Rend.",`${pos?"+":""}${rv}%`,pos?"#00e5a0":"#ef4444"]].map(([l,v,c],i) => (
                     <div key={i} style={{ display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #1a2332" }}>
                       <span style={{ fontSize:9,color:"#3d5068" }}>{l}</span>
                       <span style={{ fontSize:10,fontWeight:700,color:c }}>{v}</span>
@@ -1082,7 +1096,7 @@ export default function App() {
                   ))}
                 </div>
               );
-            })()}
+            })() : <div style={{ fontSize:10,color:"#3d5068",textAlign:"center",padding:"20px 0" }}>Ajoutez des cartes</div>}
           </div>
           <div style={{ ...S.card,padding:18 }}>
             <div style={{ fontSize:9,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em",marginBottom:12 }}>WATCHLIST</div>
