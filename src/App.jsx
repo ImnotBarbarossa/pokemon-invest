@@ -986,7 +986,7 @@ export default function App() {
 
   const filtree = col
     .filter(c => c.nom.toLowerCase().includes(rech.toLowerCase()) || c.extension.toLowerCase().includes(rech.toLowerCase()))
-    .filter(c => fg === "tous" || c.grade.includes(fg))
+    .filter(c => fg === "tous" || (fg === "gradees" ? c.grade !== "RAW" : c.grade === fg))
     .sort((a, b) =>
       tri === "rendement" ? +rend(b.prixAchat,gp(b)) - +rend(a.prixAchat,gp(a)) :
       tri === "valeur"    ? gp(b)*b.quantite - gp(a)*a.quantite :
@@ -1161,6 +1161,7 @@ export default function App() {
         <input style={{ ...S.inp,flex:1,minWidth:160 }} placeholder="🔍 Rechercher…" value={rech} onChange={e=>setRech(e.target.value)}/>
         <select style={S.inp} value={fg} onChange={e=>setFg(e.target.value)}>
           <option value="tous">Tous grades</option>
+          <option value="gradees">Gradées</option>
           {["PSA 10","PSA 9","PSA 8","PSA 7","RAW"].map(g => <option key={g} value={g}>{g}</option>)}
         </select>
         <select style={S.inp} value={tri} onChange={e=>setTri(e.target.value)}>
@@ -1188,17 +1189,28 @@ export default function App() {
                       </div>
                     </div>
                   </td>
-                  <td style={S.td}><span style={S.bdg(c.grade==="PSA 10"?"#00e5a0":c.grade.startsWith("PSA")?"#f59e0b":"#3d5068")}>{c.grade}</span></td>
+                  <td style={S.td}><span style={S.bdg(c.grade==="PSA 10"||c.grade==="CGC 10"?"#00e5a0":c.grade.startsWith("PSA")||c.grade.startsWith("CGC")||c.grade.startsWith("BGS")?"#f59e0b":"#3d5068")}>{c.grade}</span></td>
                   <td style={S.td}>{eur(c.prixAchat)}</td>
                   <td style={S.td}><div style={{ fontWeight:700,color:"#e2e8f0",fontSize:12 }}>{eur(p)}</div>{prix[c.tcgId] && <div style={{ fontSize:8,color:"#3d5068" }}>Bas: {eur(prix[c.tcgId].low)}</div>}</td>
                   <td style={{ ...S.td,color:pos?"#00e5a0":"#ef4444",fontWeight:700 }}>{pos?"+":""}{eur(g)}</td>
                   <td style={S.td}><span style={{ color:pos?"#00e5a0":"#ef4444",fontWeight:700 }}>{pos?"+":""}{rv}%</span></td>
-                  <td style={{ ...S.td,color:"#a78bfa",fontWeight:600 }}>{eur(p*c.quantite)}<span style={{ color:"#3d5068",fontWeight:400 }}> ×{c.quantite}</span></td>
+                  <td style={{ ...S.td,color:"#a78bfa",fontWeight:600 }}>
+                    <div style={{ display:"flex",alignItems:"center",gap:5 }}>
+                      <button onClick={e=>{e.stopPropagation();if(c.quantite>1)modifierCarte(c.id,{quantite:c.quantite-1});}} style={{ background:"#1a2332",border:"1px solid #2a3346",color:"#94a3b8",width:18,height:18,borderRadius:4,cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,lineHeight:1 }}>−</button>
+                      <span>{eur(p*c.quantite)} <span style={{ color:"#3d5068",fontWeight:400 }}>×{c.quantite}</span></span>
+                      <button onClick={e=>{e.stopPropagation();modifierCarte(c.id,{quantite:c.quantite+1});}} style={{ background:"#1a2332",border:"1px solid #2a3346",color:"#94a3b8",width:18,height:18,borderRadius:4,cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,lineHeight:1 }}>+</button>
+                    </div>
+                  </td>
                   <td style={S.td}>{h && <Sparkline data={h} color={pos?"#00e5a0":"#ef4444"} width={62} height={24}/>}</td>
                   <td style={S.td}><button onClick={e=>{e.stopPropagation();setCarte(c);}} style={{ ...S.btn("s"),padding:"3px 10px",fontSize:10 }}>→</button></td>
                 </tr>
               );
             })}
+            {filtree.length === 0 && (
+              <tr><td colSpan={9} style={{ textAlign:"center",padding:40,color:"#475569",fontSize:12 }}>
+                {col.length === 0 ? "Collection vide — ajoutez votre première carte !" : "Aucune carte ne correspond aux filtres"}
+              </td></tr>
+            )}
           </tbody>
         </table>
       </div>
