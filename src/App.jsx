@@ -320,7 +320,7 @@ function CardImg({ src, fallback, alt, style }) {
   const [current, setCurrent] = useState(src || fallback || PLACEHOLDER);
   const [tried, setTried] = useState(0);
 
-  useEffect(() => { setCurrent(src || fallback || PLACEHOLDER); setTried(0); }, [src]);
+  useEffect(() => { setCurrent(src || fallback || PLACEHOLDER); setTried(0); }, [src, fallback]);
 
   const handleError = () => {
     if (tried === 0 && fallback && current !== fallback) {
@@ -425,14 +425,36 @@ function TierBadge({ tier }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  TOAST NOTIFICATION
+// ═══════════════════════════════════════════════════════════════════
+function Toast({ msg, onDone }) {
+  useEffect(() => { const t = setTimeout(onDone, 2200); return () => clearTimeout(t); }, []);
+  return (
+    <div style={{ position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",background:"#00e5a0",color:"#0d1117",padding:"10px 22px",borderRadius:10,fontSize:12,fontWeight:700,zIndex:9999,boxShadow:"0 8px 30px rgba(0,229,160,0.4)",whiteSpace:"nowrap",animation:"slideUp 0.2s ease" }}>
+      {msg}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  MODALS
 // ═══════════════════════════════════════════════════════════════════
-function ModalCarte({ carte, prixData, onFermer, onSupprimer }) {
+function ModalCarte({ carte, prixData, onFermer, onSupprimer, onModifier }) {
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({ prixAchat: carte.prixAchat, quantite: carte.quantite, grade: carte.grade, etat: carte.etat });
   const p   = prixData?.[carte.tcgId];
   const px  = p?.trend ?? carte.prixAchat;
   const gain = (px - carte.prixAchat) * carte.quantite;
   const rv   = rend(carte.prixAchat, px);
   const pos  = gain >= 0;
+  const inpE = { background:"#0a0e17",border:"1px solid #2a3346",borderRadius:8,padding:"8px 10px",color:"#e2e8f0",fontSize:11,width:"100%",boxSizing:"border-box",outline:"none" };
+  const lblE = { fontSize:9,color:"#64748b",marginBottom:4,display:"block",letterSpacing:"0.06em" };
+
+  const sauvegarder = () => {
+    onModifier(carte.id, { prixAchat: +editForm.prixAchat, quantite: +editForm.quantite || 1, grade: editForm.grade, etat: editForm.etat });
+    setEditMode(false);
+  };
+
   return (
     <div onClick={onFermer} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.87)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(8px)" }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:"#131820",border:"1px solid #2a3346",borderRadius:18,padding:28,width:480,maxWidth:"95vw",boxShadow:"0 30px 90px rgba(0,0,0,0.7)" }}>
@@ -465,19 +487,49 @@ function ModalCarte({ carte, prixData, onFermer, onSupprimer }) {
             {p.histo && <Sparkline data={p.histo} color="#00e5a0" width={400} height={40}/>}
           </div>
         )}
-        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16 }}>
-          {[["Prix d'achat",eur(carte.prixAchat),"#94a3b8"],["Prix actuel",eur(px),"#e2e8f0"],["P&L",`${pos?"+":""}${eur(gain)}`,pos?"#00e5a0":"#ef4444"],["Rendement",`${pos?"+":""}${rv}%`,pos?"#00e5a0":"#ef4444"],["Quantité",`${carte.quantite} copie${carte.quantite>1?"s":""}`,"#94a3b8"],["Valeur totale",eur(px*carte.quantite),"#a78bfa"]].map(([l,v,c])=>(
-            <div key={l} style={{ background:"#0d1117",borderRadius:8,padding:"10px 12px" }}><div style={{ fontSize:9,color:"#475569",marginBottom:3 }}>{l}</div><div style={{ fontSize:14,fontWeight:700,color:c }}>{v}</div></div>
-          ))}
-        </div>
+        {editMode ? (
+          <div style={{ background:"#0a0e17",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #00e5a030" }}>
+            <div style={{ fontSize:9,color:"#00e5a0",fontWeight:700,letterSpacing:"0.1em",marginBottom:12 }}>✏️ MODIFIER LA CARTE</div>
+            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10 }}>
+              <div><label style={lblE}>PRIX D'ACHAT (€)</label><input style={inpE} type="number" step="0.01" min="0" value={editForm.prixAchat} onChange={e=>setEditForm(f=>({...f,prixAchat:e.target.value}))}/></div>
+              <div><label style={lblE}>QUANTITÉ</label><input style={inpE} type="number" min="1" value={editForm.quantite} onChange={e=>setEditForm(f=>({...f,quantite:e.target.value}))}/></div>
+              <div><label style={lblE}>GRADE</label>
+                <select style={inpE} value={editForm.grade} onChange={e=>setEditForm(f=>({...f,grade:e.target.value}))}>
+                  {["RAW","PSA 10","PSA 9","PSA 8","PSA 7","PSA 6","CGC 10","CGC 9.5","BGS 10"].map(g=><option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
+              <div><label style={lblE}>ÉTAT</label>
+                <select style={inpE} value={editForm.etat} onChange={e=>setEditForm(f=>({...f,etat:e.target.value}))}>
+                  {["Quasi Parfaite","Légèrement Jouée","Moyennement Jouée","Très Jouée","Pauvre"].map(e=><option key={e} value={e}>{e}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ display:"flex",gap:8 }}>
+              <button onClick={() => setEditMode(false)} style={{ flex:1,background:"#1e2a3a",border:"1px solid #2a3346",color:"#94a3b8",padding:8,borderRadius:8,cursor:"pointer",fontSize:11 }}>Annuler</button>
+              <button onClick={sauvegarder} style={{ flex:2,background:"linear-gradient(135deg,#00e5a0,#00b4d8)",border:"none",color:"#0d1117",padding:8,borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700 }}>✅ Sauvegarder</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16 }}>
+            {[["Prix d'achat",eur(carte.prixAchat),"#94a3b8"],["Prix actuel",eur(px),"#e2e8f0"],["P&L",`${pos?"+":""}${eur(gain)}`,pos?"#00e5a0":"#ef4444"],["Rendement",`${pos?"+":""}${rv}%`,pos?"#00e5a0":"#ef4444"],["Quantité",`${carte.quantite} copie${carte.quantite>1?"s":""}`,"#94a3b8"],["Valeur totale",eur(px*carte.quantite),"#a78bfa"]].map(([l,v,c])=>(
+              <div key={l} style={{ background:"#0d1117",borderRadius:8,padding:"10px 12px" }}><div style={{ fontSize:9,color:"#475569",marginBottom:3 }}>{l}</div><div style={{ fontSize:14,fontWeight:700,color:c }}>{v}</div></div>
+            ))}
+          </div>
+        )}
         <div style={{ display:"flex",gap:8 }}>
-          {onSupprimer && (
+          {onSupprimer && !editMode && (
             <button onClick={() => { if (window.confirm(`Supprimer "${carte.nom}" de la collection ?`)) { onSupprimer(carte.id); onFermer(); } }}
               style={{ flex:1,background:"#ef444415",border:"1px solid #ef444430",color:"#ef4444",padding:10,borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700 }}>
               🗑️ Supprimer
             </button>
           )}
-          <button onClick={onFermer} style={{ flex:2,background:"#1e2a3a",border:"1px solid #2a3346",color:"#94a3b8",padding:10,borderRadius:8,cursor:"pointer",fontSize:12 }}>Fermer</button>
+          {onModifier && !editMode && (
+            <button onClick={() => setEditMode(true)}
+              style={{ flex:1,background:"#00b4d820",border:"1px solid #00b4d840",color:"#00b4d8",padding:10,borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700 }}>
+              ✏️ Modifier
+            </button>
+          )}
+          {!editMode && <button onClick={onFermer} style={{ flex:2,background:"#1e2a3a",border:"1px solid #2a3346",color:"#94a3b8",padding:10,borderRadius:8,cursor:"pointer",fontSize:12 }}>Fermer</button>}
         </div>
       </div>
     </div>
@@ -898,6 +950,24 @@ export default function App() {
   const [tri,     setTri]     = useState("rendement");
   const [fg,      setFg]      = useState("tous");
   const [tierFil, setTierFil] = useState("tous");
+  const [toast,   setToast]   = useState(null);
+
+  const showToast = msg => { setToast(msg); };
+
+  const supprimerCarte = id => {
+    setCol(p => p.filter(c => c.id !== id));
+    showToast("🗑️ Carte supprimée de la collection");
+  };
+
+  const modifierCarte = (id, changes) => {
+    setCol(p => p.map(c => c.id === id ? { ...c, ...changes } : c));
+    showToast("✅ Carte mise à jour");
+  };
+
+  const ajouterCarte = c => {
+    setCol(p => [...p, c]);
+    showToast("✅ Carte ajoutée à la collection");
+  };
 
   useEffect(() => lsSave(LS_COL, col), [col]);
   useEffect(() => lsSave(LS_WL,  wl),  [wl]);
@@ -1260,6 +1330,7 @@ export default function App() {
         ::-webkit-scrollbar-thumb { background: #1a2332; border-radius: 2px; }
         select option { background: #0b0f18; color: #e2e8f0; }
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+        @keyframes slideUp { from { opacity:0; transform:translateX(-50%) translateY(12px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
       `}</style>
       <div style={{ display:"flex", height:"100vh" }}>
         <div style={S.sb}>
@@ -1289,9 +1360,10 @@ export default function App() {
           {onglet==="analytics"  && <Analytics/>}
         </div>
       </div>
-      {carte    && <ModalCarte carte={carte}   prixData={prix} onFermer={() => setCarte(null)} onSupprimer={id => setCol(p => p.filter(c => c.id !== id))}/>}
+      {carte    && <ModalCarte carte={carte}   prixData={prix} onFermer={() => setCarte(null)} onSupprimer={supprimerCarte} onModifier={modifierCarte}/>}
       {deckSel  && <ModalDeck  deck={deckSel}              onFermer={() => setDeckSel(null)}/>}
-      {ajout    && <ModalAjout                             onFermer={() => setAjout(false)} onAjouter={c => setCol(p => [...p,c])}/>}
+      {ajout    && <ModalAjout                             onFermer={() => setAjout(false)} onAjouter={ajouterCarte}/>}
+      {toast    && <Toast msg={toast} onDone={() => setToast(null)}/>}
     </div>
   );
 }
