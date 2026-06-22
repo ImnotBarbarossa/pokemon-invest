@@ -439,8 +439,10 @@ function Toast({ msg, onDone }) {
 // ═══════════════════════════════════════════════════════════════════
 //  MODALS
 // ═══════════════════════════════════════════════════════════════════
-function ModalCarte({ carte, prixData, onFermer, onSupprimer, onModifier }) {
-  const [editMode, setEditMode] = useState(false);
+function ModalCarte({ carte, prixData, onFermer, onSupprimer, onModifier, onAjouterWL, enWL }) {
+  const [editMode,  setEditMode]  = useState(false);
+  const [wlMode,    setWlMode]    = useState(false);
+  const [wlCible,   setWlCible]   = useState("");
   const [editForm, setEditForm] = useState({ prixAchat: carte.prixAchat, quantite: carte.quantite, grade: carte.grade, etat: carte.etat });
   const p   = prixData?.[carte.tcgId];
   const px  = p?.trend ?? carte.prixAchat;
@@ -463,7 +465,7 @@ function ModalCarte({ carte, prixData, onFermer, onSupprimer, onModifier }) {
             <CardImg src={carte.img} fallback={ioImg(carte.tcgId)} alt={carte.nom}
               style={{ width:110,borderRadius:8,boxShadow:"0 10px 30px rgba(0,0,0,0.6)",display:"block" }}/>
             {carte.grade !== "RAW" && (
-              <div style={{ position:"absolute",bottom:-7,left:"50%",transform:"translateX(-50%)",background:carte.grade==="PSA 10"?"#00e5a0":carte.grade.includes("PSA")?"#f59e0b":"#a78bfa",color:"#0d1117",fontSize:9,fontWeight:800,padding:"2px 10px",borderRadius:8,whiteSpace:"nowrap" }}>{carte.grade}</div>
+              <div style={{ position:"absolute",bottom:-7,left:"50%",transform:"translateX(-50%)",background:carte.grade==="PSA 10"||carte.grade==="CGC 10"?"#00e5a0":carte.grade.startsWith("PSA")||carte.grade.startsWith("CGC")||carte.grade.startsWith("BGS")?"#f59e0b":"#a78bfa",color:"#0d1117",fontSize:9,fontWeight:800,padding:"2px 10px",borderRadius:8,whiteSpace:"nowrap" }}>{carte.grade}</div>
             )}
           </div>
           <div style={{ flex:1 }}>
@@ -516,20 +518,41 @@ function ModalCarte({ carte, prixData, onFermer, onSupprimer, onModifier }) {
             ))}
           </div>
         )}
+        {wlMode && (
+          <div style={{ background:"#0a0e17",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #a78bfa30" }}>
+            <div style={{ fontSize:9,color:"#a78bfa",fontWeight:700,letterSpacing:"0.1em",marginBottom:10 }}>👁️ AJOUTER À LA WATCHLIST</div>
+            <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+              <input style={{ flex:1,background:"#131820",border:"1px solid #2a3346",borderRadius:8,padding:"8px 10px",color:"#e2e8f0",fontSize:11,outline:"none" }}
+                type="number" step="0.01" min="0" placeholder="Prix cible (€)" value={wlCible} onChange={e=>setWlCible(e.target.value)}/>
+              <button onClick={() => { if (wlCible) { onAjouterWL({ id:Date.now(), tcgId:carte.tcgId, nom:carte.nom, extension:carte.extension, prixCible:+wlCible, img:carte.img }); setWlMode(false); onFermer(); } }}
+                disabled={!wlCible}
+                style={{ background:wlCible?"linear-gradient(135deg,#a78bfa,#7c3aed)":"#1e2a3a",border:"none",color:wlCible?"#fff":"#475569",padding:"8px 14px",borderRadius:8,cursor:wlCible?"pointer":"not-allowed",fontSize:11,fontWeight:700,whiteSpace:"nowrap" }}>
+                Ajouter
+              </button>
+              <button onClick={() => setWlMode(false)} style={{ background:"#1e2a3a",border:"1px solid #2a3346",color:"#94a3b8",padding:"8px 10px",borderRadius:8,cursor:"pointer",fontSize:11 }}>✕</button>
+            </div>
+          </div>
+        )}
         <div style={{ display:"flex",gap:8 }}>
-          {onSupprimer && !editMode && (
+          {onSupprimer && !editMode && !wlMode && (
             <button onClick={() => { if (window.confirm(`Supprimer "${carte.nom}" de la collection ?`)) { onSupprimer(carte.id); onFermer(); } }}
               style={{ flex:1,background:"#ef444415",border:"1px solid #ef444430",color:"#ef4444",padding:10,borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700 }}>
               🗑️ Supprimer
             </button>
           )}
-          {onModifier && !editMode && (
+          {onModifier && !editMode && !wlMode && (
             <button onClick={() => setEditMode(true)}
               style={{ flex:1,background:"#00b4d820",border:"1px solid #00b4d840",color:"#00b4d8",padding:10,borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700 }}>
               ✏️ Modifier
             </button>
           )}
-          {!editMode && <button onClick={onFermer} style={{ flex:2,background:"#1e2a3a",border:"1px solid #2a3346",color:"#94a3b8",padding:10,borderRadius:8,cursor:"pointer",fontSize:12 }}>Fermer</button>}
+          {onAjouterWL && !editMode && !wlMode && !enWL && (
+            <button onClick={() => setWlMode(true)}
+              style={{ flex:1,background:"#a78bfa15",border:"1px solid #a78bfa30",color:"#a78bfa",padding:10,borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700 }}>
+              👁️ Watchlist
+            </button>
+          )}
+          {!editMode && !wlMode && <button onClick={onFermer} style={{ flex:2,background:"#1e2a3a",border:"1px solid #2a3346",color:"#94a3b8",padding:10,borderRadius:8,cursor:"pointer",fontSize:12 }}>Fermer</button>}
         </div>
       </div>
     </div>
@@ -584,6 +607,7 @@ function ModalAjout({ onFermer, onAjouter }) {
   const [errApi, setErrApi] = useState(null);
   const [form,   setForm]   = useState({ grade:"RAW", prixAchat:"", quantite:"1", etat:"Quasi Parfaite", foil:false });
   const debounceRef = useRef(null);
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
 
   const chercher = t => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -1494,7 +1518,9 @@ export default function App() {
           {onglet==="analytics"  && <Analytics/>}
         </div>
       </div>
-      {carte    && <ModalCarte carte={carte}   prixData={prix} onFermer={() => setCarte(null)} onSupprimer={supprimerCarte} onModifier={modifierCarte}/>}
+      {carte    && <ModalCarte carte={carte}   prixData={prix} onFermer={() => setCarte(null)} onSupprimer={supprimerCarte} onModifier={modifierCarte}
+                    onAjouterWL={w => { setWl(p => [...p, w]); showToast("👁️ Ajouté à la watchlist"); }}
+                    enWL={wl.some(w => w.tcgId === carte.tcgId)}/>}
       {deckSel  && <ModalDeck  deck={deckSel}              onFermer={() => setDeckSel(null)}/>}
       {ajout    && <ModalAjout                             onFermer={() => setAjout(false)} onAjouter={ajouterCarte}/>}
       {toast    && <Toast msg={toast} onDone={() => setToast(null)}/>}
