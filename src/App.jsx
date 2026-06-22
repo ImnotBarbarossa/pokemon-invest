@@ -334,6 +334,89 @@ function CardImg({ src, fallback, alt, style }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  DECK CARD IMAGE — résolution auto-réparante via TCGdex (par nom)
+//  Les URLs codées en dur des decks sont peu fiables (set/numéro faux).
+//  On résout la vraie image à partir du nom FR de la carte, avec cache
+//  partagé + dédoublonnage des requêtes en vol, et fallback typé.
+// ═══════════════════════════════════════════════════════════════════
+const deckImgCache   = new Map(); // nom -> url | null (null = introuvable)
+const deckImgInFlight = new Map(); // nom -> Promise<url|null>
+
+// Nettoie un nom FR pour maximiser les chances de match API
+function deckSearchTerms(nom) {
+  const base = nom.trim();
+  const terms = [base];
+  const noMega = base.replace(/^Méga\s+/i, "").trim();
+  if (noMega !== base) terms.push(noMega);
+  const noEx = noMega.replace(/\s+ex$/i, "").trim();
+  if (noEx !== noMega) terms.push(noEx);
+  // Retire suffixes d'illustration éventuels
+  const core = noEx.replace(/\s+(Art Alternatif|VMAX|VSTAR|GX|V|Y|X).*$/i, "").trim();
+  if (core && core !== noEx) terms.push(core);
+  return [...new Set(terms)].filter(t => t.length >= 2);
+}
+
+async function resolveDeckImg(nom) {
+  if (deckImgCache.has(nom)) return deckImgCache.get(nom);
+  if (deckImgInFlight.has(nom)) return deckImgInFlight.get(nom);
+  const p = (async () => {
+    for (const q of deckSearchTerms(nom)) {
+      try {
+        const r = await fetch(`${TCGDEX}/cards?name=${encodeURIComponent(q)}&pagination:page=1&pagination:itemsPerPage=8`);
+        if (!r.ok) continue;
+        const d = await r.json();
+        if (!Array.isArray(d)) continue;
+        const hit = d.find(x => x.image);
+        if (hit?.image) { const u = `${hit.image}/high.webp`; deckImgCache.set(nom, u); return u; }
+      } catch {}
+    }
+    deckImgCache.set(nom, null);
+    return null;
+  })();
+  deckImgInFlight.set(nom, p);
+  const res = await p;
+  deckImgInFlight.delete(nom);
+  return res;
+}
+
+function DeckCardImg({ nom, fallback, couleur = "#1a2332", style }) {
+  const [url, setUrl] = useState(() => deckImgCache.get(nom) ?? fallback ?? null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setFailed(false);
+    // Si déjà résolu en cache (y compris null), on l'utilise directement
+    if (deckImgCache.has(nom)) {
+      const cached = deckImgCache.get(nom);
+      setUrl(cached || fallback || null);
+      if (!cached && !fallback) setFailed(true);
+      return;
+    }
+    setUrl(fallback || null); // affiche le fallback hardcodé en attendant
+    resolveDeckImg(nom).then(u => {
+      if (!alive) return;
+      if (u) setUrl(u);
+      else if (!fallback) setFailed(true);
+    });
+    return () => { alive = false; };
+  }, [nom, fallback]);
+
+  if (failed || !url) {
+    // Fallback typé : tuile colorée avec initiale, plutôt qu'un 🃏 générique
+    return (
+      <div style={{ ...style, display:"flex", alignItems:"center", justifyContent:"center",
+        background:`linear-gradient(135deg, ${couleur}22, ${couleur}08)`, border:`1px solid ${couleur}33`,
+        borderRadius:6, aspectRatio:"63/88", color:`${couleur}`, fontSize:18, fontWeight:800 }}>
+        {(nom || "?").charAt(0).toUpperCase()}
+      </div>
+    );
+  }
+
+  return <img src={url} alt={nom || ""} onError={() => { if (fallback && url !== fallback) setUrl(fallback); else setFailed(true); }} style={style} />;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  HOOK PRIX
 // ═══════════════════════════════════════════════════════════════════
 function usePrix(ids) {
@@ -586,10 +669,10 @@ function ModalDeck({ deck, onFermer }) {
           </div>
         </div>
         <div style={{ fontSize:9,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em",marginBottom:12 }}>CARTES CLÉS — IMAGES TCGdex</div>
-        <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10 }}>
+        <div style={{ display:"grid",gridTemplateColumns:mob?"repeat(2,1fr)":"repeat(3,1fr)",gap:10 }}>
           {deck.cartes.map((c, i) => (
             <div key={i} style={{ background:"#0a0e17",borderRadius:8,padding:10,border:"1px solid #1a2332",textAlign:"center" }}>
-              <CardImg src={c.img} alt={c.nom} style={{ width:"100%",maxWidth:90,borderRadius:6,marginBottom:6,boxShadow:"0 4px 14px rgba(0,0,0,0.5)" }}/>
+              <DeckCardImg nom={c.nom} fallback={c.img} couleur={deck.couleur} style={{ width:"100%",maxWidth:90,margin:"0 auto",borderRadius:6,marginBottom:6,boxShadow:"0 4px 14px rgba(0,0,0,0.5)",display:"block" }}/>
               <div style={{ fontSize:10,color:"#e2e8f0",fontWeight:600,lineHeight:1.3,marginBottom:2 }}>{c.nom}</div>
               <div style={{ fontSize:9,color:"#475569",marginBottom:4 }}>×{c.nb}</div>
               <span style={{ background:`${deck.couleur}20`,color:deck.couleur,fontSize:8,padding:"1px 7px",borderRadius:6,fontWeight:700 }}>{c.rarete}</span>
@@ -1360,11 +1443,11 @@ export default function App() {
               </div>
             </div>
             <div style={{ fontSize:10,color:"#64748b",lineHeight:1.6,marginBottom:10 }}>{d.desc.substring(0,110)}…</div>
-            {/* Bug fix: CardImg avec fallback pour les cartes du deck */}
+            {/* Images deck auto-réparantes (résolues par nom via TCGdex) */}
             <div style={{ display:"flex",gap:4,marginBottom:10 }}>
               {d.cartes.slice(0, 4).map((c, i) => (
                 <div key={i} style={{ flex:1,borderRadius:5,overflow:"hidden",background:"#080c12" }}>
-                  <CardImg src={c.img} alt={c.nom} style={{ width:"100%",display:"block" }}/>
+                  <DeckCardImg nom={c.nom} fallback={c.img} couleur={d.couleur} style={{ width:"100%",display:"block",borderRadius:5 }}/>
                 </div>
               ))}
             </div>
