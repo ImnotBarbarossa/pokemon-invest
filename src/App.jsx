@@ -342,17 +342,42 @@ function CardImg({ src, fallback, alt, style }) {
 const deckImgCache   = new Map(); // nom -> url | null (null = introuvable)
 const deckImgInFlight = new Map(); // nom -> Promise<url|null>
 
+// Certaines cartes de decks utilisent des noms FR incorrects/inventés.
+// Map vers le vrai nom français officiel que l'API TCGdex connaît.
+const DECK_NAME_ALIAS = {
+  "Gréninjas": "Amphinobi",
+  "Croâ":      "Grenousse",   // Froakie
+  "Froakie":   "Grenousse",
+  "Hyporoi":   "Trioxhydre",  // Hydreigon
+  "Deino":     "Solochi",
+  "Zweilous":  "Diamat",
+  "Cotovol":   "Tylton",      // Swablu
+  "Magneti":   "Magnéti",     // accent
+};
+
+// Réduit un nom (retire Méga / ex / suffixes d'illustration) en variantes
+function reduceName(nom) {
+  const out = [];
+  const base = nom.trim();
+  out.push(base);
+  const noMega = base.replace(/^Méga\s+/i, "").trim();
+  if (noMega !== base) out.push(noMega);
+  const noEx = noMega.replace(/\s+ex$/i, "").trim();
+  if (noEx !== noMega) out.push(noEx);
+  const core = noEx.replace(/\s+(Art Alternatif|VMAX|VSTAR|GX|V|Y|X).*$/i, "").trim();
+  if (core && core !== noEx) out.push(core);
+  return out;
+}
+
 // Nettoie un nom FR pour maximiser les chances de match API
 function deckSearchTerms(nom) {
-  const base = nom.trim();
-  const terms = [base];
-  const noMega = base.replace(/^Méga\s+/i, "").trim();
-  if (noMega !== base) terms.push(noMega);
-  const noEx = noMega.replace(/\s+ex$/i, "").trim();
-  if (noEx !== noMega) terms.push(noEx);
-  // Retire suffixes d'illustration éventuels
-  const core = noEx.replace(/\s+(Art Alternatif|VMAX|VSTAR|GX|V|Y|X).*$/i, "").trim();
-  if (core && core !== noEx) terms.push(core);
+  const terms = reduceName(nom);
+  // Ajoute les variantes de l'alias officiel si le nom de base ou réduit est connu
+  for (const key of Object.keys(DECK_NAME_ALIAS)) {
+    if (terms.some(t => t.toLowerCase() === key.toLowerCase())) {
+      terms.push(...reduceName(DECK_NAME_ALIAS[key]));
+    }
+  }
   return [...new Set(terms)].filter(t => t.length >= 2);
 }
 
