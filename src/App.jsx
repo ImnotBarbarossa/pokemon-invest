@@ -1264,15 +1264,106 @@ export default function App() {
 
   const Analytics = () => {
     const parR = {};
-    col.forEach(c => { parR[c.rarete] = (parR[c.rarete] || 0) + gp(c) * c.quantite; });
+    const parExt = {};
+    col.forEach(c => {
+      parR[c.rarete]   = (parR[c.rarete]   || 0) + gp(c) * c.quantite;
+      parExt[c.extension] = (parExt[c.extension] || 0) + gp(c) * c.quantite;
+    });
     const COLS = ["#00e5a0","#00b4d8","#a78bfa","#f59e0b","#ef4444"];
+
+    // Historique portefeuille 30j simulé basé sur les prix actuels
+    const histo30 = (() => {
+      let v = actuel * 0.88;
+      return Array.from({ length:30 }, (_, i) => {
+        v += v * (Math.random() * 0.03 - 0.008);
+        if (i === 29) return actuel;
+        return +v.toFixed(2);
+      });
+    })();
+    const histo30Min = Math.min(...histo30), histo30Max = Math.max(...histo30);
+    const pctMois = histo30Max > 0 ? (((actuel - histo30[0]) / histo30[0]) * 100).toFixed(1) : "0.0";
+
+    const sorted = [...col].sort((a,b) => +rend(b.prixAchat,gp(b)) - +rend(a.prixAchat,gp(a)));
+    const top3   = sorted.slice(0, 3);
+    const flop3  = sorted.slice(-3).reverse();
+
     return (
       <div>
         <div style={{ marginBottom:20 }}><div style={{ fontSize:20,fontWeight:700,color:"#e2e8f0" }}>Analytics</div><div style={{ fontSize:10,color:"#3d5068",marginTop:2 }}>Analyse approfondie · CardMarket FR 🇫🇷</div></div>
+
+        {/* KPIs ligne */}
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14 }}>
+          {[
+            ["VALEUR ACTUELLE", eur(actuel),  "#00e5a0"],
+            ["P&L TOTAL",  `${gain>=0?"+":""}${eur(gain)}`, gain>=0?"#00e5a0":"#ef4444"],
+            ["ROI",        `${gain>=0?"+":""}${r}%`, gain>=0?"#00e5a0":"#ef4444"],
+            ["PERF. 30J",  `${+pctMois>=0?"+":""}${pctMois}%`, +pctMois>=0?"#00e5a0":"#ef4444"],
+          ].map(([l,v,c]) => (
+            <div key={l} style={{ ...S.card,padding:"14px 16px" }}>
+              <div style={{ fontSize:8,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em",marginBottom:6 }}>{l}</div>
+              <div style={{ fontSize:16,fontWeight:700,color:c }}>{v}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Graphique historique 30j */}
+        <div style={{ ...S.card,padding:18,marginBottom:14 }}>
+          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
+            <div style={{ fontSize:9,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em" }}>ÉVOLUTION PORTEFEUILLE — 30 JOURS</div>
+            <span style={{ fontSize:9,color:+pctMois>=0?"#00e5a0":"#ef4444",fontWeight:700 }}>{+pctMois>=0?"+":""}{pctMois}%</span>
+          </div>
+          <Sparkline data={histo30} color={+pctMois>=0?"#00e5a0":"#ef4444"} width={780} height={60}/>
+          <div style={{ display:"flex",justifyContent:"space-between",marginTop:6 }}>
+            <span style={{ fontSize:8,color:"#3d5068" }}>J-30 · {eur(histo30[0])}</span>
+            <span style={{ fontSize:8,color:"#3d5068" }}>Aujourd'hui · {eur(actuel)}</span>
+          </div>
+        </div>
+
+        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14 }}>
+          {/* Top performers */}
+          <div style={{ ...S.card,padding:18 }}>
+            <div style={{ fontSize:9,color:"#00e5a0",fontWeight:700,letterSpacing:"0.1em",marginBottom:12 }}>🏆 TOP PERFORMERS</div>
+            {top3.map((c,i) => {
+              const p = +rend(c.prixAchat, gp(c));
+              return (
+                <div key={c.id} style={{ display:"flex",alignItems:"center",gap:10,marginBottom:10,paddingBottom:10,borderBottom:"1px solid #1a2332" }}>
+                  <div style={{ width:22,height:22,borderRadius:"50%",background:["#ffd700","#94a3b8","#a0785a"][i],display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:"#0d1117",flexShrink:0 }}>{i+1}</div>
+                  <CardImg src={c.img} fallback={ioImg(c.tcgId)} alt="" style={{ width:28,borderRadius:3,flexShrink:0 }}/>
+                  <div style={{ flex:1,minWidth:0 }}>
+                    <div style={{ fontSize:10,color:"#e2e8f0",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{c.nom}</div>
+                    <div style={{ fontSize:9,color:"#3d5068" }}>{c.grade}</div>
+                  </div>
+                  <span style={{ fontSize:11,fontWeight:700,color:"#00e5a0",flexShrink:0 }}>+{p}%</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Flop performers */}
+          <div style={{ ...S.card,padding:18 }}>
+            <div style={{ fontSize:9,color:"#ef4444",fontWeight:700,letterSpacing:"0.1em",marginBottom:12 }}>📉 MOINS PERFORMANTS</div>
+            {flop3.map((c,i) => {
+              const p = +rend(c.prixAchat, gp(c));
+              return (
+                <div key={c.id} style={{ display:"flex",alignItems:"center",gap:10,marginBottom:10,paddingBottom:10,borderBottom:"1px solid #1a2332" }}>
+                  <div style={{ width:22,height:22,borderRadius:"50%",background:"#ef444430",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:"#ef4444",flexShrink:0 }}>▼</div>
+                  <CardImg src={c.img} fallback={ioImg(c.tcgId)} alt="" style={{ width:28,borderRadius:3,flexShrink:0 }}/>
+                  <div style={{ flex:1,minWidth:0 }}>
+                    <div style={{ fontSize:10,color:"#e2e8f0",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{c.nom}</div>
+                    <div style={{ fontSize:9,color:"#3d5068" }}>{c.grade}</div>
+                  </div>
+                  <span style={{ fontSize:11,fontWeight:700,color:p>=0?"#00e5a0":"#ef4444",flexShrink:0 }}>{p>=0?"+":""}{p}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:14 }}>
+          {/* Performance par carte — barre */}
           <div style={{ ...S.card,padding:18 }}>
             <div style={{ fontSize:9,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em",marginBottom:14 }}>PERFORMANCE PAR CARTE</div>
-            {[...col].sort((a,b) => +rend(b.prixAchat,gp(b)) - +rend(a.prixAchat,gp(a))).map(c => {
+            {sorted.map(c => {
               const p = +rend(c.prixAchat, gp(c)), pos = p >= 0;
               return (
                 <div key={c.id} style={{ marginBottom:11 }}>
@@ -1287,24 +1378,32 @@ export default function App() {
               );
             })}
           </div>
-          <div style={{ ...S.card,padding:18 }}>
-            <div style={{ fontSize:9,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em",marginBottom:14 }}>VALEUR PAR RARETÉ</div>
-            {Object.entries(parR).sort((a,b) => b[1]-a[1]).map(([rar,val],i) => (
-              <div key={rar} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:"1px solid #1a2332" }}>
-                <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                  <div style={{ width:7,height:7,borderRadius:"50%",background:COLS[i%COLS.length] }}/>
-                  <span style={{ fontSize:10,color:"#94a3b8" }}>{rar}</span>
+
+          {/* Valeur par rareté + extension */}
+          <div>
+            <div style={{ ...S.card,padding:18,marginBottom:12 }}>
+              <div style={{ fontSize:9,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em",marginBottom:14 }}>VALEUR PAR RARETÉ</div>
+              {Object.entries(parR).sort((a,b) => b[1]-a[1]).map(([rar,val],i) => (
+                <div key={rar} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #1a2332" }}>
+                  <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                    <div style={{ width:7,height:7,borderRadius:"50%",background:COLS[i%COLS.length] }}/>
+                    <span style={{ fontSize:10,color:"#94a3b8" }}>{rar}</span>
+                  </div>
+                  <div style={{ textAlign:"right" }}>
+                    <div style={{ fontSize:11,fontWeight:700,color:"#e2e8f0" }}>{eur(val)}</div>
+                    <div style={{ fontSize:9,color:"#3d5068" }}>{actuel>0?((val/actuel)*100).toFixed(1):0}%</div>
+                  </div>
                 </div>
-                <div style={{ textAlign:"right" }}>
-                  <div style={{ fontSize:11,fontWeight:700,color:"#e2e8f0" }}>{eur(val)}</div>
-                  <div style={{ fontSize:9,color:"#3d5068" }}>{actuel>0?((val/actuel)*100).toFixed(1):0}%</div>
+              ))}
+            </div>
+            <div style={{ ...S.card,padding:18 }}>
+              <div style={{ fontSize:9,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em",marginBottom:12 }}>VALEUR PAR EXTENSION</div>
+              {Object.entries(parExt).sort((a,b) => b[1]-a[1]).slice(0,5).map(([ext,val],i) => (
+                <div key={ext} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #1a2332" }}>
+                  <span style={{ fontSize:10,color:"#94a3b8",maxWidth:"60%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{ext}</span>
+                  <span style={{ fontSize:11,fontWeight:700,color:COLS[i%COLS.length] }}>{eur(val)}</span>
                 </div>
-              </div>
-            ))}
-            <div style={{ marginTop:14,padding:"12px 14px",background:"#080c12",borderRadius:8 }}>
-              <div style={{ fontSize:9,color:"#3d5068",marginBottom:4 }}>ROI MOYEN PORTEFEUILLE</div>
-              <div style={{ fontSize:22,fontWeight:700,color:gain>=0?"#00e5a0":"#ef4444" }}>{gain>=0?"+":""}{r}%</div>
-              <div style={{ fontSize:9,color:"#3d5068",marginTop:2 }}>basé sur CardMarket FR</div>
+              ))}
             </div>
           </div>
         </div>
@@ -1349,7 +1448,16 @@ export default function App() {
             <div style={{ fontSize:8,color:"#3d5068",marginBottom:4,letterSpacing:"0.1em" }}>PORTEFEUILLE</div>
             <div style={{ fontSize:15,fontWeight:700,color:"#00e5a0" }}>{eur(actuel)}</div>
             <div style={{ fontSize:9,color:gain>=0?"#00e5a0":"#ef4444",marginTop:1 }}>{gain>=0?"+":""}{eur(gain)} ({r}%)</div>
-            <div style={{ fontSize:8,color:"#3d5068",marginTop:3 }}>🇫🇷 TCGdex + CardMarket FR</div>
+            <div style={{ fontSize:8,color:"#3d5068",marginTop:3 }}>{col.length} cartes · {col.reduce((s,c)=>s+c.quantite,0)} copies</div>
+            <div style={{ fontSize:8,color:"#3d5068",marginTop:1 }}>🇫🇷 TCGdex + CardMarket FR</div>
+            <button onClick={() => {
+              if (window.confirm("Réinitialiser la collection aux données d'exemple ?")) {
+                setCol(COL_INIT); setWl(WL_INIT);
+                showToast("🔄 Collection réinitialisée");
+              }
+            }} style={{ marginTop:10,width:"100%",background:"#1a2332",border:"1px solid #2a3346",color:"#3d5068",padding:"5px 0",borderRadius:6,cursor:"pointer",fontSize:9 }}>
+              ↺ Réinitialiser
+            </button>
           </div>
         </div>
         <div style={S.main}>
