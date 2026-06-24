@@ -1,4 +1,15 @@
-import { useState, useEffect, useCallback, useRef, useId } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useId } from "react";
+
+function useIsMobile(bp = 768) {
+  const [m, setM] = useState(() => window.innerWidth < bp);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${bp - 1}px)`);
+    const h = e => setM(e.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, [bp]);
+  return m;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  CONFIGURATION — TCGdex API (multilingue, FR natif)
@@ -620,6 +631,7 @@ function ModalAjout({ onFermer, onAjouter }) {
 //  VUE BASE DE DONNÉES
 // ═══════════════════════════════════════════════════════════════════
 function VueBD() {
+  const isMobile = useIsMobile();
   const [sets,       setSets]       = useState([]);
   const [setActif,   setSetActif]   = useState(null);
   const [cartesBD,   setCartesBD]   = useState([]);
@@ -703,28 +715,31 @@ function VueBD() {
     chargerSets();
   };
 
-  const cartesFiltrees = filtre
-    ? cartesBD.filter(c => (c.name||"").toLowerCase().includes(filtre.toLowerCase()))
-    : cartesBD;
+  const cartesFiltrees = useMemo(() =>
+    filtre ? cartesBD.filter(c => (c.name||"").toLowerCase().includes(filtre.toLowerCase())) : cartesBD,
+    [cartesBD, filtre]
+  );
 
   const S = { card:{ background:"#0b0f18",border:"1px solid #1a2332",borderRadius:12 } };
 
-  // Grouper sets par série
-  const parSerie = sets.reduce((acc, s) => {
-    const k = s.serie?.name || "Autres";
-    if (!acc[k]) acc[k] = [];
-    acc[k].push(s);
-    return acc;
-  }, {});
+  const parSerie = useMemo(() =>
+    sets.reduce((acc, s) => {
+      const k = s.serie?.name || "Autres";
+      if (!acc[k]) acc[k] = [];
+      acc[k].push(s);
+      return acc;
+    }, {}),
+    [sets]
+  );
 
   return (
     <div>
-      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:20 }}>
+      <div style={{ display:"flex",flexDirection:isMobile?"column":"row",justifyContent:"space-between",alignItems:isMobile?"flex-start":"flex-end",gap:isMobile?10:0,marginBottom:20 }}>
         <div>
           <div style={{ fontSize:20,fontWeight:700,color:"#e2e8f0" }}>🗄️ Base de Données Cartes FR</div>
           <div style={{ fontSize:10,color:"#3d5068",marginTop:2 }}>TCGdex API · Images HD · Persistance IndexedDB · Français natif</div>
         </div>
-        <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+        <div style={{ display:"flex",gap:8,alignItems:"center",flexWrap:"wrap" }}>
           <div style={{ background:"#00e5a015",border:"1px solid #00e5a030",borderRadius:8,padding:"6px 12px" }}>
             <span style={{ fontSize:9,color:"#3d5068" }}>BD locale </span>
             <span style={{ fontSize:13,fontWeight:700,color:"#00e5a0" }}>{totalBD.toLocaleString("fr-FR")}</span>
@@ -775,13 +790,13 @@ function VueBD() {
 
       {vue === "cartes" && (
         <div>
-          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
+          <div style={{ display:"flex",flexDirection:isMobile?"column":"row",justifyContent:"space-between",alignItems:isMobile?"flex-start":"center",gap:isMobile?8:0,marginBottom:14 }}>
             <div>
               <button onClick={() => { setVue("sets"); setSetActif(null); }} style={{ background:"#1a2332",border:"1px solid #2a3346",color:"#94a3b8",padding:"5px 10px",borderRadius:6,cursor:"pointer",fontSize:10,marginRight:10 }}>← Retour</button>
               <span style={{ fontSize:14,fontWeight:700,color:"#e2e8f0" }}>{setActif?.name}</span>
               <span style={{ fontSize:10,color:"#3d5068",marginLeft:8 }}>{cartesBD.length} cartes · TCGdex FR</span>
             </div>
-            <input style={{ background:"#0b0f18",border:"1px solid #1a2332",borderRadius:8,padding:"6px 12px",color:"#e2e8f0",fontSize:11,outline:"none",width:200 }}
+            <input style={{ background:"#0b0f18",border:"1px solid #1a2332",borderRadius:8,padding:"6px 12px",color:"#e2e8f0",fontSize:11,outline:"none",width:isMobile?"100%":200 }}
               placeholder="🔍 Filtrer…" value={filtre} onChange={e => setFiltre(e.target.value)}/>
           </div>
           {loadingSet && <div style={{ textAlign:"center",padding:40,color:"#475569" }}>Chargement TCGdex FR…</div>}
@@ -806,7 +821,7 @@ function VueBD() {
       )}
 
       {vue === "sync" && (
-        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:16 }}>
+        <div style={{ display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16 }}>
           <div>
             <div style={{ ...S.card,padding:20,marginBottom:14 }}>
               <div style={{ fontSize:11,color:"#e2e8f0",fontWeight:700,marginBottom:12 }}>🗄️ État de la base IndexedDB</div>
@@ -870,35 +885,36 @@ export default function App() {
   const [tri,     setTri]     = useState("rendement");
   const [fg,      setFg]      = useState("tous");
   const [tierFil, setTierFil] = useState("tous");
+  const isMobile = useIsMobile();
 
-  const ids = [...col.map(c => c.tcgId), ...wl.map(w => w.tcgId)].filter(Boolean);
+  const ids = useMemo(() => [...col.map(c => c.tcgId), ...wl.map(w => w.tcgId)].filter(Boolean), [col, wl]);
   const { prix, load, maj, actualiser } = usePrix(ids);
-  const gp  = c => prix?.[c.tcgId]?.trend ?? c.prixAchat;
+  const gp = useCallback(c => prix?.[c.tcgId]?.trend ?? c.prixAchat, [prix]);
 
-  const investi = col.reduce((s, c) => s + c.prixAchat * c.quantite, 0);
-  const actuel  = col.reduce((s, c) => s + gp(c) * c.quantite, 0);
+  const investi = useMemo(() => col.reduce((s, c) => s + c.prixAchat * c.quantite, 0), [col]);
+  const actuel  = useMemo(() => col.reduce((s, c) => s + gp(c) * c.quantite, 0), [col, gp]);
   const gain    = actuel - investi;
   const r       = investi > 0 ? ((gain / investi) * 100).toFixed(1) : "0.0";
-  const gag     = col.filter(c => gp(c) > c.prixAchat).length;
-  const perd    = col.filter(c => gp(c) < c.prixAchat).length;
-  const best    = [...col].sort((a, b) => +rend(b.prixAchat, gp(b)) - +rend(a.prixAchat, gp(a)))[0];
+  const gag     = useMemo(() => col.filter(c => gp(c) > c.prixAchat).length, [col, gp]);
+  const perd    = useMemo(() => col.filter(c => gp(c) < c.prixAchat).length, [col, gp]);
+  const best    = useMemo(() => [...col].sort((a, b) => +rend(b.prixAchat, gp(b)) - +rend(a.prixAchat, gp(a)))[0], [col, gp]);
 
-  const filtree = col
+  const filtree = useMemo(() => col
     .filter(c => c.nom.toLowerCase().includes(rech.toLowerCase()) || c.extension.toLowerCase().includes(rech.toLowerCase()))
     .filter(c => fg === "tous" || c.grade.includes(fg))
     .sort((a, b) =>
       tri === "rendement" ? +rend(b.prixAchat,gp(b)) - +rend(a.prixAchat,gp(a)) :
       tri === "valeur"    ? gp(b)*b.quantite - gp(a)*a.quantite :
       a.nom.localeCompare(b.nom, "fr")
-    );
+    ), [col, rech, fg, tri, gp]);
 
-  const decksFil = tierFil === "tous" ? DECKS : DECKS.filter(d => d.tier === tierFil);
+  const decksFil = useMemo(() => tierFil === "tous" ? DECKS : DECKS.filter(d => d.tier === tierFil), [tierFil]);
 
   const S = {
     app:  { fontFamily:"'IBM Plex Mono',monospace", background:"#080c12", minHeight:"100vh", color:"#e2e8f0" },
-    sb:   { width:215, background:"#0b0f18", borderRight:"1px solid #1a2332", display:"flex", flexDirection:"column", padding:"20px 0", flexShrink:0 },
+    sb:   { width:215, background:"#0b0f18", borderRight:"1px solid #1a2332", display:isMobile?"none":"flex", flexDirection:"column", padding:"20px 0", flexShrink:0 },
     nav:  a => ({ display:"flex",alignItems:"center",gap:10,padding:"10px 22px",cursor:"pointer",fontSize:11,fontWeight:600,letterSpacing:"0.06em",color:a?"#00e5a0":"#3d5068",background:a?"#00e5a008":"transparent",borderLeft:a?"2px solid #00e5a0":"2px solid transparent",transition:"all 0.2s" }),
-    main: { flex:1, overflow:"auto", padding:24 },
+    main: { flex:1, overflow:"auto", padding:isMobile?"14px 14px 76px":24 },
     card: { background:"#0b0f18", border:"1px solid #1a2332", borderRadius:12 },
     kpi:  acc => ({ background:"#0b0f18",border:"1px solid #1a2332",borderRadius:12,padding:"16px 18px",borderTop:`2px solid ${acc}` }),
     th:   { padding:"9px 14px",textAlign:"left",fontSize:9,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em",borderBottom:"1px solid #1a2332" },
@@ -918,7 +934,7 @@ export default function App() {
     }));
     return (
       <div>
-        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:20 }}>
+        <div style={{ display:"flex",flexDirection:isMobile?"column":"row",justifyContent:"space-between",alignItems:isMobile?"flex-start":"flex-end",gap:isMobile?10:0,marginBottom:20 }}>
           <div>
             <div style={{ fontSize:20,fontWeight:700,color:"#e2e8f0",letterSpacing:"-0.02em" }}>Tableau de bord</div>
             <div style={{ fontSize:10,color:"#3d5068",marginTop:2 }}>Portefeuille Pokémon 🇫🇷 · TCGdex + CardMarket FR</div>
@@ -928,7 +944,7 @@ export default function App() {
             <button onClick={actualiser} style={S.btn("s")}>↻ Actualiser</button>
           </div>
         </div>
-        <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:18 }}>
+        <div style={{ display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:14,marginBottom:18 }}>
           {[
             { label:"VALEUR PORTEFEUILLE", val:eur(actuel),                        sub:"prix CardMarket FR",                                          acc:"#00e5a0" },
             { label:"P&L TOTAL",           val:`${gain>=0?"+":""}${eur(gain)}`,     sub:`${r}% rendement`,                                            acc:gain>=0?"#00e5a0":"#ef4444" },
@@ -942,7 +958,7 @@ export default function App() {
             </div>
           ))}
         </div>
-        <div style={{ display:"grid",gridTemplateColumns:"1.1fr 1fr 1fr",gap:14 }}>
+        <div style={{ display:"grid",gridTemplateColumns:isMobile?"1fr":"1.1fr 1fr 1fr",gap:14 }}>
           <div style={{ ...S.card,padding:18 }}>
             <div style={{ fontSize:9,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em",marginBottom:12 }}>RÉPARTITION</div>
             <div style={{ display:"flex",alignItems:"center",gap:14 }}>
@@ -1027,7 +1043,7 @@ export default function App() {
 
   const Collection = () => (
     <div>
-      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>
+      <div style={{ display:"flex",flexDirection:isMobile?"column":"row",justifyContent:"space-between",alignItems:isMobile?"flex-start":"center",gap:isMobile?10:0,marginBottom:16 }}>
         <div>
           <div style={{ fontSize:20,fontWeight:700,color:"#e2e8f0" }}>Ma Collection</div>
           <div style={{ fontSize:10,color:"#3d5068",marginTop:2 }}>{col.length} cartes · {col.reduce((s,c)=>s+c.quantite,0)} copies · {eur(actuel)} · Images TCGdex FR</div>
@@ -1049,8 +1065,8 @@ export default function App() {
           <option value="nom">A–Z Nom</option>
         </select>
       </div>
-      <div style={S.card}>
-        <table style={{ width:"100%",borderCollapse:"collapse" }}>
+      <div style={{ ...S.card, overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
+        <table style={{ width:"100%",borderCollapse:"collapse",minWidth:isMobile?700:"auto" }}>
           <thead><tr>{["CARTE","GRADE","ACHAT","CARDMARKET FR","P&L","REND.","VALEUR TOTALE","HIST. 7J",""].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
           <tbody>
             {filtree.map(c => {
@@ -1087,12 +1103,12 @@ export default function App() {
 
   const Decks = () => (
     <div>
-      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:18 }}>
+      <div style={{ display:"flex",flexDirection:isMobile?"column":"row",justifyContent:"space-between",alignItems:isMobile?"flex-start":"flex-end",gap:isMobile?10:0,marginBottom:18 }}>
         <div>
           <div style={{ fontSize:20,fontWeight:700,color:"#e2e8f0" }}>Decks Compétitifs TCG Pocket</div>
           <div style={{ fontSize:10,color:"#3d5068",marginTop:2 }}>Tier list · Images TCGdex · Données tournois 2025</div>
         </div>
-        <div style={{ display:"flex",gap:6 }}>
+        <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
           {["tous","S","A+","A"].map(t => (
             <button key={t} onClick={() => setTierFil(t)} style={{ background:tierFil===t?"#00e5a018":"#1a2332",border:`1px solid ${tierFil===t?"#00e5a040":"#2a3346"}`,color:tierFil===t?"#00e5a0":"#475569",padding:"5px 12px",borderRadius:8,cursor:"pointer",fontSize:10,fontWeight:700 }}>
               {t === "tous" ? "Tous" : `Tier ${t}`}
@@ -1149,7 +1165,7 @@ export default function App() {
     return (
       <div>
         <div style={{ marginBottom:20 }}><div style={{ fontSize:20,fontWeight:700,color:"#e2e8f0" }}>Analytics</div><div style={{ fontSize:10,color:"#3d5068",marginTop:2 }}>Analyse approfondie · CardMarket FR 🇫🇷</div></div>
-        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:14 }}>
+        <div style={{ display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14 }}>
           <div style={{ ...S.card,padding:18 }}>
             <div style={{ fontSize:9,color:"#3d5068",fontWeight:700,letterSpacing:"0.1em",marginBottom:14 }}>PERFORMANCE PAR CARTE</div>
             {[...col].sort((a,b) => +rend(b.prixAchat,gp(b)) - +rend(a.prixAchat,gp(a))).map(c => {
@@ -1210,6 +1226,8 @@ export default function App() {
         ::-webkit-scrollbar-thumb { background: #1a2332; border-radius: 2px; }
         select option { background: #0b0f18; color: #e2e8f0; }
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+        .poke-bottom-btn { background:transparent; border:none; font-family:inherit; cursor:pointer; }
+        .poke-bottom-btn:active { background:#00e5a008; }
       `}</style>
       <div style={{ display:"flex", height:"100vh" }}>
         <div style={S.sb}>
@@ -1239,6 +1257,20 @@ export default function App() {
           {onglet==="analytics"  && <Analytics/>}
         </div>
       </div>
+      {isMobile && (
+        <div style={{ position:"fixed",bottom:0,left:0,right:0,zIndex:900,background:"#0b0f18",borderTop:"1px solid #1a2332",display:"flex",height:60 }}>
+          {TABS.map(t => {
+            const actif = onglet === t.id;
+            return (
+              <button key={t.id} className="poke-bottom-btn" onClick={() => setOnglet(t.id)}
+                style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,padding:"6px 0",color:actif?"#00e5a0":"#3d5068",borderTop:`2px solid ${actif?"#00e5a0":"transparent"}`,transition:"all 0.15s" }}>
+                <span style={{ fontSize:17,lineHeight:1 }}>{t.ico}</span>
+                <span style={{ fontSize:8,fontWeight:700,letterSpacing:"0.06em" }}>{t.lbl.split(" ")[0]}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {carte    && <ModalCarte carte={carte}   prixData={prix} onFermer={() => setCarte(null)}/>}
       {deckSel  && <ModalDeck  deck={deckSel}              onFermer={() => setDeckSel(null)}/>}
       {ajout    && <ModalAjout                             onFermer={() => setAjout(false)} onAjouter={c => setCol(p => [...p,c])}/>}
