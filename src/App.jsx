@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useId } from "react";
 
 // ═══════════════════════════════════════════════════════════════════
 //  CONFIGURATION — TCGdex API (multilingue, FR natif)
@@ -295,7 +295,7 @@ const DECKS = [
 //  HELPERS
 // ═══════════════════════════════════════════════════════════════════
 const eur  = n => new Intl.NumberFormat("fr-FR", { style:"currency", currency:"EUR", minimumFractionDigits:2 }).format(n);
-const rend = (a, c) => (((c - a) / a) * 100).toFixed(1);
+const rend = (a, c) => a === 0 ? "0.0" : (((c - a) / a) * 100).toFixed(1);
 
 // ═══════════════════════════════════════════════════════════════════
 //  COMPOSANT IMAGE — double fallback automatique
@@ -306,7 +306,7 @@ function CardImg({ src, fallback, alt, style }) {
   const [current, setCurrent] = useState(src || fallback || PLACEHOLDER);
   const [tried, setTried] = useState(0);
 
-  useEffect(() => { setCurrent(src || fallback || PLACEHOLDER); setTried(0); }, [src]);
+  useEffect(() => { setCurrent(src || fallback || PLACEHOLDER); setTried(0); }, [src, fallback]);
 
   const handleError = () => {
     if (tried === 0 && fallback && current !== fallback) {
@@ -350,7 +350,7 @@ function usePrix(ids) {
     setPrix(res); setMaj(new Date()); setLoad(false);
   }, [key]);
 
-  useEffect(() => { charger(); }, [key]);
+  useEffect(() => { charger(); }, [charger]);
   return { prix, load, maj, actualiser: charger };
 }
 
@@ -358,6 +358,7 @@ function usePrix(ids) {
 //  COMPOSANTS GRAPHIQUES
 // ═══════════════════════════════════════════════════════════════════
 function Sparkline({ data, color = "#00e5a0", width = 88, height = 34 }) {
+  const uid = useId();
   if (!data || data.length < 2) return null;
   const mn = Math.min(...data), mx = Math.max(...data);
   const pts = data.map((v, i) => {
@@ -365,7 +366,7 @@ function Sparkline({ data, color = "#00e5a0", width = 88, height = 34 }) {
     const y = height - ((v - mn) / (mx - mn || 1)) * (height - 4) - 2;
     return `${x},${y}`;
   }).join(" ");
-  const id = `sk${color.replace("#", "")}${width}`;
+  const id = `sk${uid.replace(/:/g, "")}${color.replace("#", "")}`;
   return (
     <svg width={width} height={height} style={{ overflow:"visible", display:"block" }}>
       <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
@@ -381,7 +382,7 @@ function Sparkline({ data, color = "#00e5a0", width = 88, height = 34 }) {
 function Donut({ data, total }) {
   let cum = -90;
   const arcs = data.map(d => {
-    const a = (d.val / (total || 1)) * 360, s = cum; cum += a;
+    const a = Math.min((d.val / (total || 1)) * 360, 359.99), s = cum; cum += a;
     const tr = x => x * Math.PI / 180;
     return { ...d, path: `M60,60 L${60+50*Math.cos(tr(s))},${60+50*Math.sin(tr(s))} A50,50 0 ${a>180?1:0},1 ${60+50*Math.cos(tr(s+a))},${60+50*Math.sin(tr(s+a))} Z` };
   });
@@ -509,6 +510,7 @@ function ModalAjout({ onFermer, onAjouter }) {
   const [loadS,  setLoadS]  = useState(false);
   const [errApi, setErrApi] = useState(null);
   const [form,   setForm]   = useState({ grade:"RAW", prixAchat:"", quantite:"1", etat:"Quasi Parfaite" });
+  const debounceRef = useRef(null);
 
   const chercher = async t => {
     if (!t || t.length < 2) { setRes([]); setErrApi(null); return; }
@@ -558,7 +560,7 @@ function ModalAjout({ onFermer, onAjouter }) {
         <div style={{ fontSize:14,fontWeight:700,color:"#e2e8f0",marginBottom:14 }}>➕ Ajouter une carte</div>
         <div style={{ marginBottom:12 }}>
           <input style={inp} placeholder="🔍 Rechercher en français (ex: Dracaufeu, Pikachu…)" value={terme}
-            onChange={e => { setTerme(e.target.value); chercher(e.target.value); }}/>
+            onChange={e => { const v = e.target.value; setTerme(v); clearTimeout(debounceRef.current); debounceRef.current = setTimeout(() => chercher(v), 300); }}/>
           <div style={{ fontSize:9,color:"#475569",marginTop:4 }}>Base TCGdex — noms et images 🇫🇷</div>
           {errApi && <div style={{ fontSize:10,color:"#ef4444",marginTop:6 }}>⚠ {errApi}</div>}
         </div>
@@ -971,7 +973,7 @@ export default function App() {
                       <div style={{ marginTop:4 }}><span style={S.bdg(best.grade==="PSA 10"?"#00e5a0":best.grade.startsWith("PSA")?"#f59e0b":"#64748b")}>{best.grade}</span></div>
                     </div>
                   </div>
-                  {[["Achat",eur(best.prixAchat),"#64748b"],["Actuel",eur(p),"#e2e8f0"],["P&L",`+${eur(p-best.prixAchat)}`,"#00e5a0"],["Rend.",`+${rv}%`,"#00e5a0"]].map(([l,v,c],i) => (
+                  {[["Achat",eur(best.prixAchat),"#64748b"],["Actuel",eur(p),"#e2e8f0"],["P&L",`${(p-best.prixAchat)>=0?"+":""}${eur(p-best.prixAchat)}`,(p-best.prixAchat)>=0?"#00e5a0":"#ef4444"],["Rend.",`${+rv>=0?"+":""}${rv}%`,+rv>=0?"#00e5a0":"#ef4444"]].map(([l,v,c],i) => (
                     <div key={i} style={{ display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #1a2332" }}>
                       <span style={{ fontSize:9,color:"#3d5068" }}>{l}</span>
                       <span style={{ fontSize:10,fontWeight:700,color:c }}>{v}</span>
